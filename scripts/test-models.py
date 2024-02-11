@@ -1,3 +1,7 @@
+import os
+os.environ['TRANSFORMERS_VERBOSITY'] = 'error'
+os.environ['DATASETS_VERBOSITY'] = 'error'
+
 import argparse
 from datasets import load_dataset
 import math
@@ -7,10 +11,12 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 import sys
 import time
 
-models = { 
+models = {          
     "tinyllama_1b": "TinyLlama/TinyLlama-1.1B-intermediate-step-1195k-token-2.5T", # 4.10 GB
     "croissantllm_1b" : "croissantllm/CroissantLLMBase", # 5.01 GB
     "stablelm2_1b" : "stabilityai/stablelm-2-1_6b", # 3.06 GB
+    "qwen1.5_0.5b" : "Qwen/Qwen1.5-0.5B" , # 1.16 GB
+    "qwen1.5_1b" : "Qwen/Qwen1.5-1.8B" , # 3.43 GB
     "olmo_1b" : "allenai/OLMo-1B", # 4.39 GB
      
     "redpajama_3b" : "togethercomputer/RedPajama-INCITE-Base-3B-v1", # 5.30 GB
@@ -18,6 +24,7 @@ models = {
     "openllama2_3b" : "openlm-research/open_llama_3b_v2", #  6.38 GB
     "stablelm_3b" : "stabilityai/stablelm-3b-4e1t", # 5.21 GB
     "phi2_3b" : "microsoft/phi-2", # 5.18 GB
+    "qwen1.5_4b" : "Qwen/Qwen1.5-4B" , # 7.37 GB
     "minicpm_3b" : "openbmb/MiniCPM-2B-sft-bf16", # 5.08 GB
 
     "bloomz_7b" : "bigscience/bloomz-7b1-mt", # 13.18 GB
@@ -32,13 +39,15 @@ models = {
     "qwen_7b" : "Qwen/Qwen-7B", # 14.38 GB
     "yi_6b" : "01-ai/Yi-6B", # 11.29 GB
     "decilm_7b" : "Deci/DeciLM-7B", # 13.12 GB
+    "qwen1.5_7b" : "Qwen/Qwen1.5-7B" , # 14.39 GB
     "olmo_7b" : "allenai/OLMo-7B", # 25.66 GB
     
     "openllama1_13b" : "openlm-research/open_llama_13b", # 24.24 GB
     "llama2_13b" : "meta-llama/Llama-2-13b-hf", # 24.25 GB
     "qwen_14b" : "Qwen/Qwen-14B", # 26.39 GB
     "solar_10b" : "upstage/SOLAR-10.7B-v1.0", # 19.99 GB
-    
+    "qwen1.5_14b" : "Qwen/Qwen1.5-14B" , # 26.40 GB
+     
     "mpt_30b" : "mosaicml/mpt-30b", # 55.80 GB 
     "codellama_34b" : "codellama/CodeLlama-34b-hf", # 62.86 GB 
     "yi_34b" : "01-ai/Yi-34B", # 64.06 GB    
@@ -187,7 +196,7 @@ def load_model(model_id, model_name):
         model = AutoModelForCausalLM.from_pretrained(model_name, use_safetensors=True, device_map="auto", torch_dtype=torch.float16, attn_implementation="flash_attention_2")
     elif model_id=="croissantllm_1b":
         model = AutoModelForCausalLM.from_pretrained(model_name, use_safetensors=False, device_map="auto", torch_dtype=torch.float16, attn_implementation="flash_attention_2")
-    elif model_id=="stablelm2_1b":
+    elif model_id=="stablelm2_1b" or model_id=="minicpm_3b":
         model = AutoModelForCausalLM.from_pretrained(model_name, use_safetensors=True, device_map="auto", torch_dtype="auto", attn_implementation="flash_attention_2", trust_remote_code=True)
     elif model_id=="olmo_1b":
         # no flash attention support for olmo as of 02/04/2024
@@ -221,6 +230,8 @@ def load_model(model_id, model_name):
     elif model_id=="qwen_14b":
         # no flash attention support for qwen_14b as of 02/01/2024
         model = AutoModelForCausalLM.from_pretrained(model_name, use_safetensors=True, load_in_8bit=True, device_map="auto", torch_dtype="auto", attn_implementation="eager", trust_remote_code=True)
+    elif model_id=="qwen1.5_14b":
+        model = AutoModelForCausalLM.from_pretrained(model_name, use_safetensors=True, load_in_8bit=True, device_map="auto", torch_dtype="auto", attn_implementation="flash_attention_2")
     elif model_id=="mpt_30b":
         # no flash attention support as of 01/18/2024
         model = AutoModelForCausalLM.from_pretrained(model_name, use_safetensors=False, load_in_4bit=True, device_map="auto", torch_dtype="auto")
@@ -240,6 +251,7 @@ def load_model(model_id, model_name):
     
     load_mem_allocated = torch.cuda.memory_allocated(0)
     print(f"- memory allocated: {(load_mem_allocated-initial_mem_allocated)/1024/1024:.2f} MB")
+    
     if model_id=="bloomz_7b":
         tokenizer.model_max_length = model.config.seq_length
     elif model_id=="olmo_1b" or model_id=="olmo_7b":
@@ -258,10 +270,12 @@ def load_model(model_id, model_name):
     # Memory limit of RTX 4090
     if tokenizer.model_max_length>8192:
         tokenizer.model_max_length = 8192
-    elif model_id=="decilm_7b" or model_id=="codellama_34b":
+
+    if model_id=="decilm_7b" or model_id=="codellama_34b" or model_id=="qwen1.5_7b" or model_id=="qwen1.5_14b":
         tokenizer.model_max_length = 4096
     elif model_id=="mpt_30b":
         tokenizer.model_max_length = 2048
+
     print(f"- model sequence length: {int(tokenizer.model_max_length)}")
 
     print(f"- model torch dtype: {model.dtype}")
@@ -364,13 +378,13 @@ def test_perplexity(model_id, model_name, tokenizer, model, dataset_name, datase
         batch_size = 8
     elif model_id=="stablelm_3b" or model_id=="phi2_3b" or model_id=="falcon_7b" or model_id=="olmo_7b" or model_id=="mpt_7b"or model_id=="openllama1_13b":
         batch_size = 6
-    elif model_id=="stablelm2_1b" or model_id=="btlm_3b" or model_id=="llama2_7b":
+    elif model_id=="stablelm2_1b" or model_id=="btlm_3b" or model_id=="minicpm_3b" or model_id=="llama2_7b":
         batch_size = 4
     elif model_id=="yi_6b" or model_id=="llama2_13b":
         batch_size = 3
     elif model_id=="bloomz_7b" or model_id=="llama2_7b_32k" or model_id=="mistral_7b"or model_id=="decilm_7b" or model_id=="solar_10b":
         batch_size = 2
-    elif model_id=="mpt_30b" or model_id=="codellama_34b" or model_id=="yi_34b" or model_id=="qwen_7b" or model_id=="qwen_14b":
+    elif model_id=="mpt_30b" or model_id=="codellama_34b" or model_id=="yi_34b" or model_id.startswith("qwen"):
         batch_size = 1
     stride = 256
     
@@ -399,7 +413,7 @@ def test_perplexity(model_id, model_name, tokenizer, model, dataset_name, datase
         for ppl,pplu,uri,span in zip(batch_ppl.tolist(), batch_pplu.tolist(), encodings_batch["overflow_to_sample_uri"], encodings_batch["overflow_to_sample_offset"]):
             logger.log_batch(ppl, pplu, uri, span)
 
-        if idx%10 == 0:
+        if idx%100 == 0:
             print(f"{(idx+1)*batch_size} encodings processed")
             display_perplexities(pred_tokens_count, ppl_losses, unigram_losses)
 
@@ -427,6 +441,10 @@ def main(model_id, test_function, dataset_lang=None):
     if dataset_lang:
         if dataset_lang in datasets:
             dataset_name = datasets[dataset_lang]
+            
+            from datasets.utils import disable_progress_bar
+            disable_progress_bar()
+            
             print()
             print(f"Loading dataset {dataset_name}")
             dataset = load_dataset(dataset_name, split="valid", token=myhftoken)
@@ -458,7 +476,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Script for testing large language models.")
     parser.add_argument("model_id", type=str, help="The id of the model to test.")
     parser.add_argument("test_function", type=str, help="The test function to run.")
-    parser.add_argument("--dataset", type=str, help="The language of the dataset (optional).", default=None)
+    parser.add_argument("dataset_lang", type=str, help="The language of the dataset.")
 
     args = parser.parse_args()
-    main(args.model_id, args.test_function, args.dataset)
+    main(args.model_id, args.test_function, args.dataset_lang)
