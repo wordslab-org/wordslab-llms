@@ -215,9 +215,12 @@ def load_model(model_id, model_name):
         # no flash attention support for phi2 as of 01/07/2024
         # for qwen: latest version of flash_attn installed, but module dropout_layer_norm not found
         model = AutoModelForCausalLM.from_pretrained(model_name, use_safetensors=True, device_map="auto", torch_dtype="auto", attn_implementation="eager", trust_remote_code=True)
-    elif model_id=="bloomz_7b" or model_id=="mpt_7b":
+    elif model_id=="bloomz_7b":
         # no flash attention support as of 01/08/2024
         model = AutoModelForCausalLM.from_pretrained(model_name, use_safetensors=True, device_map="auto", torch_dtype="auto", attn_implementation="eager")
+    elif model_id=="mpt_7b":
+        # no flash attention support as of 01/08/2024
+        model = AutoModelForCausalLM.from_pretrained(model_name, use_safetensors=False, device_map="auto", torch_dtype="auto")
     elif model_id=="decilm_7b":
         model = AutoModelForCausalLM.from_pretrained(model_name, use_safetensors=True, device_map="auto", torch_dtype="auto", attn_implementation="flash_attention_2", trust_remote_code=True)
     elif model_id=="openllama1_13b":
